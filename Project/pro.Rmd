@@ -1,0 +1,362 @@
+---
+title: "STA302 Project"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+#histogram for normality for red wine and white wine 
+```{r}
+red_wine <- read.table("./wine.csv", header=T, sep = ";")
+white_wine <- read.table("./winequality-white.csv", header=T, sep = ";")
+par(mfrow=c(2,2))
+
+hist(red_wine$density, main = "Red wine density distribution", xlab = "density", ylab = "Frequency")
+hist(white_wine$density, main = "White wine density distribution", xlab = "density", ylab = "Frequency")
+```
+
+# Reading data and fixing data frame 
+```{r}
+# reading table
+red_wine <- read.table("./wine.csv", header=T, sep = ";")
+
+# removing "quality" column since it is unnecessary for the research question 
+red_wine <- subset(red_wine, select = -c(quality) )
+
+# reordering column order for convenience 
+red_wine <- red_wine[, c(8,1,2,3,4,5,6,7,9,10,11)]
+
+
+```
+
+
+#simple linear regression for each parameter 
+```{r}
+par(mfrow=c(2,2))
+
+for (i in c(2:11)){
+  plot(red_wine[,i], red_wine$density, xlab = names(red_wine)[i],ylab = "density")
+  abline(lsfit(red_wine[,i], red_wine$density))
+mtext("Linear regression model for each predictors", side = 3, line = -2, outer = TRUE)
+
+}
+```
+
+There are predictors that could fit a linear model based on simple linear regression model for each predictor with a response variable, density. 
+
+# Distribution of each predictors 
+```{r}
+par(mfrow=c(2,5))
+for (i in c(2:11)){
+  hist(red_wine[,i], xlab = names(red_wine)[i], main = "")
+  mtext("Distribution of each predictors", side = 3, line = -2, outer = TRUE)
+
+}
+```
+
+Skewed predictors indicate a problem with normality violation, linearity, and poorly fitted model.
+
+# Relations of density to each predictors
+```{r}
+pairs(density ~ fixed.acidity + volatile.acidity + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine)
+mtext("Relations of density to each predictors", side = 3, line = -2, outer = TRUE)
+
+
+```
+
+Relation of density to each predictors indicate a problem with non-constant variance. However, we continue to find a fit model by reducing using ANOVA tests. 
+
+
+# Full model
+```{r}
+full_model = lm(density ~ fixed.acidity + volatile.acidity + citric.acid + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine)
+summary(full_model)
+
+summary(full_model)$r.squared
+
+```
+From the model output, linear relationship does exist between density and the parameters since p value is smaller than 0.05. Also, we can say that this model explains approximately 84.2% of variation originally present in the response density (84% of the total variation can be explained by these predictors in this way while 16% is still unexplained). 
+
+
+# Removing insignificant parameter
+```{r}
+# what if we decide to remove all non-significant predictors
+reduced_model1 <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine)
+
+# running an F-test
+anova(reduced_model1, full_model)
+
+```
+Since citric.acid is not significant, we check if it is okay to remove the predictor. Based on the partial F-test, we see that full model is not so significant compared to reduced_model1. This indicates that it is okay to remove the predictor citric.acid.
+
+# Summary of reduced_model1
+```{r}
+summary(reduced_model1)
+summary(reduced_model1)$r.squared
+anova(reduced_model1)
+```
+
+Only a small amount of information was lost based on the r squared value of reduced_model1. P-value of reduced_model1 is smaller than 0.05 so we can say it is significant. 
+
+# Can other predictors be removed?
+```{r}
+# getting rid of sulphates
+reduced_model2 <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + alcohol, data = red_wine)
+
+anova(reduced_model2, reduced_model1)
+
+```
+
+Since sulphate's variance in ANOVA test is non-significant, we check if it is okay to remove. However, the first reduced model is significant than the one removed. So we stick with the first reduced model. 
+
+# Diagnosis tests on reduced_model1
+```{r}
+# checking to see linearity, uncorrelated errors, constant variance
+# residual vs predictors
+par(mfrow=c(3,3))
+plot(reduced_model1$residuals ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine, ylab="residuals")
+
+mtext("Residuals of reduced model vs Predictors", side = 3, line = -1.5, outer = TRUE)
+
+par(mfrow=c(2,2))
+
+# residual vs fitted values 
+plot(reduced_model1, which = 1)
+
+# qq plot
+qqnorm(reduced_model1$residuals)
+qqline(reduced_model1$residuals)
+
+# cook's distance and leverage point graph
+plot(reduced_model1, which = 4)
+plot(reduced_model1, which = 5)
+
+```
+
+Linearity is broken for some predictors such as residual.sugar, chlorides, total.sulfur.dioxide, and sulphates. For some predictors such as volatile.acidity, and free.sulfur.dioxide, linearity is a slightly broken. We can also see some that some residual values is separated from the cluster. So we can say that there are uncorrelated errors. 
+
+Fitted value and residual plot shows that there might be a problem with the constant variance since the red line is curved and not extremely close to the horizontal line, residual = 0. 
+
+The qq plot is close to a straight line, though we can see it is fat-tailed. So we can say that there is more data at the extremes of the distribution and less data in the centre. 
+
+
+# Removing outliers and large residuals
+```{r}
+# using cook's distance and leverage point graph
+cooksd <- cooks.distance(reduced_model1)
+influential <- as.numeric(names(cooks.distance(reduced_model1))[(cooksd > (4/nrow(red_wine)))])
+largeresiduals <- rstudent(reduced_model1) > 3
+
+red_wine2 <- red_wine[-influential,]
+red_wine3 <- red_wine2[-largeresiduals,]
+```
+
+# Summary of fixed_model1
+```{r}
+# residuals vs predictors 
+par(mfrow=c(3,3))
+fixed_model1 <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine3)
+summary(fixed_model1)
+summary(fixed_model1)$r.squared
+anova(fixed_model1)
+```
+
+Based on the p-value, it is valid. Also, r-square value has increased which tells us that it is significant to remove outliers. Let's check on the plots.
+
+# Diagnostic tests on fixed_model1
+```{r}
+par(mfrow=c(3,3))
+plot(fixed_model1$residuals ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine3, ylab="residuals")
+
+
+par(mfrow=c(2,2))
+# residual vs fitted values 
+plot(fixed_model1, which = 1)
+
+# qq plot
+plot(fixed_model1, which = 2)
+
+# cook's distance and leverage point graph
+plot(fixed_model1, which = 4)
+plot(fixed_model1, which = 5)
+```
+
+After removing outliers, high leverage points, and large residual values, it is clearly shown that the red line of residuals vs fitted graph is much closer to the horizontal line. From here, we can say that the it has constant variance. From the qq plot, the problem with the fat tailed has been solved. 
+
+To conclude, we have fixed the problem of constant variance and uncorrelated errors. However, the plot of residuals vs predictors still shows that there is a problem with linearity. Let's fix that now. 
+
+
+# Checking conditions of fixed_model
+```{r}
+# check if conditional mean response is a single function of a linear combination of the predictors
+fit <- fixed_model1$fitted.values
+plot(red_wine3$density ~ fit, main = "Fitted values vs Density", xlab = "fitted values", ylab = "density")
+abline(a = 0, b = 1)
+lines(lowess(red_wine3$density ~ fit), lty=2)
+
+```
+
+```{r}
+# check if conditional mean of each predictor is a linear function with another predictor
+fit <- fixed_model1$fitted.values
+pairs(~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine3)
+
+mtext("Relations of each predictors", side = 3, line = -1.5, outer = TRUE)
+
+```
+
+No problem with the 2 additional conditions. 
+
+# Summary of final_model
+```{r}
+red_wine4 <- subset(red_wine3, select = -c(citric.acid) )
+
+for (i in c(2:10)){
+  red_wine4[,i] <- log(red_wine4[,i])
+}
+
+final_model <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine4)
+summary(final_model)
+summary(final_model)$r.squared
+anova(final_model)
+
+confint(final_model, conf.level=0.95)
+
+
+```
+
+# Diagnostic tests of final_model
+```{r}
+# residuals vs predictors 
+par(mfrow=c(3,3))
+plot(final_model$residuals ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = red_wine4, ylab="residuals")
+mtext("Residuals vs Predictors", side = 3, line = -1.5, outer = TRUE)
+
+par(mfrow=c(2,2))
+# residual vs fitted values 
+plot(final_model, which = 1)
+
+# qq plot
+plot(final_model, which = 2)
+
+# cook's distance and leverage point graph
+plot(final_model, which = 4)
+plot(final_model, which = 5)
+```
+
+# Checking conditions of final_model
+```{r}
+
+# check if conditional mean response is a single function of a linear combination of the predictors
+fit <- final_model$fitted.values
+plot(red_wine4$density ~ fit, main = "Fitted values vs Density", xlab = "fitted values", ylab = "density")
+abline(a = 0, b = 1)
+lines(lowess(red_wine4$density ~ fit), lty=2)
+
+# check if conditional mean of each predictor is a linear function with another predictor
+pairs(red_wine4[,2:10])
+mtext("Relations of each predictors", side = 3, line = -1.5, outer = TRUE)
+
+```
+
+# Validating model with split data
+```{r}
+# creating two independent dataset (training set, test dataset by 75:25 ratio)
+
+splitting_data <- sort(sample(nrow(red_wine4), nrow(red_wine4)*.75))
+train <- red_wine4[splitting_data,]
+test <- red_wine4[-splitting_data,]
+```
+
+# Comparing two data set's summary
+```{r}
+# comparing training dataset and test data set's explanatory analysis 
+
+train_validate <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = train)
+test_validate <- lm(density ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = test)
+
+summary(train_validate)
+summary(test_validate)
+
+summary(train_validate)$r.squared
+summary(test_validate)$r.squared
+
+
+
+```
+
+#Comparing two data sets diagnosis test
+```{r}
+# comparing plots of residual vs predictors 
+par(mfrow=c(3,3))
+plot(train_validate$residuals ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = train, ylab="residuals")
+mtext("Train dataset's residual vs predictors", side = 3, line = -1.5, outer = TRUE)
+
+
+plot(test_validate$residuals ~ fixed.acidity + volatile.acidity + residual.sugar + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + pH + sulphates + alcohol, data = test, ylab="residuals")
+mtext("Test dataset's residual vs predictors", side = 3, line = -1.5, outer = TRUE)
+
+```
+
+
+```{r}
+# comparing assumption checks 
+par(mfrow=c(2,2))
+# residual vs fitted values 
+plot(train_validate$residuals ~ train_validate$fitted.values, main="Train dataset's residual vs fitted", xlab="Fitted Values", ylab="Residuals")
+plot(test_validate$residuals ~ test_validate$fitted.values, main="Test dataset's residual vs fitted", xlab="Fitted Values", ylab="Residuals")
+
+# qq plot
+qqnorm(train_validate$residuals, main = "Train dataset's normal q-q plot")
+qqline(train_validate$residuals)
+
+qqnorm(test_validate$residuals, main = "Test dataset's normal q-q plot")
+qqline(test_validate$residuals)
+
+```
+
+#Comparing conditions
+```{r}
+# check condition 1
+par(mfrow=c(2,2))
+fit <- train_validate$fitted.values
+plot(train$density ~ fit, main = "Condition 1 for train dataset")
+abline(a = 0, b = 1)
+lines(lowess(train$density ~ fit), lty=2)
+
+fit <- test_validate$fitted.values
+plot(test$density ~ fit, main = "Condition 1 for test dataset")
+abline(a = 0, b = 1)
+lines(lowess(test$density ~ fit), lty=2)
+
+# check condition 2
+pairs(train[,2:10])
+mtext("Condition 2 for train datset", side = 3, line = -1.5, outer = TRUE)
+
+pairs(test[,2:10])
+mtext("Condition 2 for test datset", side = 3, line = -1.5, outer = TRUE)
+
+```
+
+# Predictions 
+```{r}
+
+# use final model(s) with test data to predict, and the predictions should be equal or their prediction intervals should cover the real observations. 
+# If you have several models, of similar results, you can test and decide as the best will have the lowest sum of residuals for the test dataset.
+par(mfrow=c(2,1))
+
+plot(x=predict(final_model, newdata = test), y= test$density,
+     xlab='Predicted Values',
+     ylab='Actual Values',
+     main='Predicted vs Actual Values of test data')
+abline(a=0, b=1)
+
+plot(x=predict(final_model), y= red_wine4$density,
+     xlab='Predicted Values',
+     ylab='Actual Values',
+     main='Predicted vs Actual Values of final model')
+abline(a=0, b=1)
+
+```
+
+
